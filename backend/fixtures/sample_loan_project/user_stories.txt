@@ -1,0 +1,17 @@
+# User Stories and Acceptance Criteria — Personal Loan Underwriting
+
+[US-PL-101] Automated Eligibility Validation
+As a Credit Analyst, I want the system to automatically validate applicant age (21 to max permitted age) and income so that unqualified leads are stopped early.
+Acceptance Criteria:
+- Reject application if applicant_age < 21.
+- Reject application if applicant_age > max_age.
+- Reject application if monthly_income < 25,000 INR.
+
+[US-PL-102] Senior Committee Routing for High-Value Loans
+As a Senior Credit Manager, I want loans exceeding the large loan threshold to be routed to the Senior Credit Committee before sanction.
+Acceptance Criteria:
+- Flag application as high-value when principal exceeds committee threshold.
+- Block disbursement until explicit committee approval signature is logged.
+
+[US-PL-103] Audit and Traceability
+As a Compliance Officer, I want every rule check to cite its originating policy document.

@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+backend/.venv/
+backend/data/
+*.db
+.pytest_cache/
+
+
 # Environment variables
 .env
 .env.*

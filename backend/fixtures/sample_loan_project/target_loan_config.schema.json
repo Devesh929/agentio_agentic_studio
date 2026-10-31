@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AzentioPersonalLoanConfig",
+  "type": "object",
+  "required": [
+    "product_id",
+    "currency",
+    "eligibility",
+    "limits",
+    "workflow"
+  ],
+  "properties": {
+    "product_id": {
+      "type": "string"
+    },
+    "currency": {
+      "type": "string",
+      "enum": [
+        "INR",
+        "USD",
+        "EUR"
+      ]
+    },
+    "eligibility": {
+      "type": "object",
+      "required": [
+        "min_age",
+        "max_age",
+        "min_monthly_income"
+      ],
+      "properties": {
+        "min_age": {
+          "type": "integer",
+          "minimum": 18,
+          "maximum": 70
+        },
+        "max_age": {
+          "type": "integer",
+          "minimum": 18,
+          "maximum": 75
+        },
+        "min_monthly_income": {
+          "type": "number",
+          "minimum": 10000
+        }
+      }
+    },
+    "limits": {
+      "type": "object",
+      "required": [
+        "min_loan_amount",
+        "max_loan_amount",
+        "min_tenure_months",
+        "max_tenure_months"
+      ],
+      "properties": {
+        "min_loan_amount": {
+          "type": "number",
+          "minimum": 10000
+        },
+        "max_loan_amount": {
+          "type": "number",
+          "maximum": 10000000
+        },
+        "min_tenure_months": {
+          "type": "integer",
+          "minimum": 6
+        },
+        "max_tenure_months": {
+          "type": "integer",
+          "maximum": 120
+        }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "required": [
+        "committee_approval_threshold",
+        "auto_approval_enabled"
+      ],
+      "properties": {
+        "committee_approval_threshold": {
+          "type": "number",
+          "minimum": 100000
+        },
+        "auto_approval_enabled": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
