@@ -27,6 +27,14 @@ These multi-source specifications frequently **contradict one another**. Traditi
 
 ---
 
+## 📸 Live Studio Interface
+
+![Tessera AI Implementation Studio](screenshots/tessera-level2-live-studio.png)
+
+*Full-spectrum AI Implementation Studio workbench: multi-source document ingestion, automated quarantine of corrupted files, and Level 2 executable data mappings table.*
+
+---
+
 ## 🏗️ System Architecture & Workflow Pipeline
 
 ```mermaid
