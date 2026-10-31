@@ -41,7 +41,7 @@ class ValidationService:
         outcome = ValidationOutcome()
         outcome.unresolved_questions_count = unresolved_blocking_count
 
-        # 1. Deterministic JSON Schema Validation
+        # 1. Exact Draft-07 JSON Schema Validation
         if schema:
             try:
                 validator = Draft7Validator(schema)

@@ -12,7 +12,7 @@ import { Project } from './types'
 import { api } from './api/client'
 
 export function App() {
-  const [currentTab, setCurrentTab] = useState('overview')
+  const [currentTab, setCurrentTab] = useState('generate')
   const [projects, setProjects] = useState<Project[]>([])
   const [activeProject, setActiveProject] = useState<Project | null>(null)
   const [openQuestionsCount, setOpenQuestionsCount] = useState(0)

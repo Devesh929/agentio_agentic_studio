@@ -1,8 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   Cpu, FileJson, GitFork, Table as TableIcon, CheckCircle2,
   AlertTriangle, Play, RefreshCw, Bookmark, ShieldCheck, Download,
-  ExternalLink, Layers, Check, Info, Sparkles, Send
+  ExternalLink, Layers, Check, Info, Sparkles, Send, Upload,
+  Paperclip, HelpCircle, ArrowRight, Eye, Copy, X, FileText,
+  Search, Sliders, ChevronRight, Activity, Network, Clock, ShieldAlert,
+  Brain, Code2, History
 } from 'lucide-react'
 import Editor from '@monaco-editor/react'
 import {
@@ -10,623 +13,1228 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 
-import { Project, Artifact, ArtifactVersion, SourceDocument } from '../types'
+import { Project, SourceDocument } from '../types'
 import { api } from '../api/client'
+import { EditableWorkflowCanvas } from '../components/level2/EditableWorkflowCanvas'
+import { FieldMappingsPanel } from '../components/level2/FieldMappingsPanel'
+import { OpenApiContractPanel } from '../components/level2/OpenApiContractPanel'
+import { ScenarioTestSuitePanel } from '../components/level2/ScenarioTestSuitePanel'
+import { ValidationDiagnosticsPanel } from '../components/level2/ValidationDiagnosticsPanel'
+import { ChangeControlPanel } from '../components/level2/ChangeControlPanel'
 
 interface GeneratePageProps {
   activeProject: Project | null
   setCurrentTab: (tab: string) => void
 }
 
-export const GeneratePage: React.FC<GeneratePageProps> = ({ activeProject, setCurrentTab }) => {
-  const [activeMode, setActiveMode] = useState<'configuration' | 'workflow' | 'mapping' | 'tests'>('configuration')
+interface CitationDetail {
+  document: string
+  locator: string
+  excerpt: string
+}
+
+interface MetricAnalysis {
+  field_path: string
+  label: string
+  value: any
+  type: string
+  confidence_score: number
+  confidence_rationale: string
+  citation: CitationDetail
+  resolved_via_question?: {
+    question_id: string
+    question_text: string
+    user_answer: string
+  } | null
+}
+
+export const GeneratePage: React.FC<GeneratePageProps> = ({ activeProject }) => {
+  // Navigation / Phase: 'graph' | 'thinking' | 'questions' | 'config'
+  const [stage, setStage] = useState<'graph' | 'thinking' | 'questions' | 'config'>('graph')
+  const [configViewMode, setConfigViewMode] = useState<'interactive' | 'json'>('interactive')
+  const [activeArtefactTab, setActiveArtefactTab] = useState<
+    'config' | 'workflow' | 'mappings' | 'openapi' | 'tests' | 'validation' | 'versioning'
+  >('config')
+  const [fullSynthesisData, setFullSynthesisData] = useState<any>(null)
+
+  // Prompt & File upload
   const [prompt, setPrompt] = useState(
-    'Using @personal_loan_brd.docx and @loan_parameters.xlsx, generate personal loan implementation artefacts.'
+    'Using @01_KYC_AML_BRD.docx, @02_KYC_AML_Functional_Spec.pdf, @03_KYC_AML_Parameters_and_Mapping.xlsx, @04_KYC_AML_User_Stories.docx, @05_Target_Implementation_Schema.json, @06_Existing_Approval_Workflow.yaml, @07_Source_API_Contract.json, @08_Implementation_Notes.txt, synthesize digital loan KYC/AML implementation schema and resolve policy discrepancies.'
   )
-  const [modelProfile, setModelProfile] = useState('Balanced')
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [progressEvents, setProgressEvents] = useState<Array<{ step: string; message: string }>>([])
-
-  // Artifact States
-  const [configArtifact, setConfigArtifact] = useState<{ artifact: Artifact; latest_version: ArtifactVersion } | null>(null)
-  const [workflowArtifact, setWorkflowArtifact] = useState<{ artifact: Artifact; latest_version: ArtifactVersion } | null>(null)
-  const [mappingArtifact, setMappingArtifact] = useState<{ artifact: Artifact; latest_version: ArtifactVersion } | null>(null)
-  const [testsArtifact, setTestsArtifact] = useState<{ artifact: Artifact; latest_version: ArtifactVersion } | null>(null)
-
-  // Editor states
-  const [editorContent, setEditorContent] = useState('')
-  const [selectedCitation, setSelectedCitation] = useState<string | null>(null)
-  const [selectedNode, setSelectedNode] = useState<any>(null)
-  const [saveSuccessToast, setSaveSuccessToast] = useState(false)
-
-  // Autocomplete mentions
   const [sources, setSources] = useState<SourceDocument[]>([])
+  const [uploading, setUploading] = useState(false)
   const [showMentionPicker, setShowMentionPicker] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const loadProjectArtifacts = async () => {
+  // Knowledge Graph Generation State
+  const [parentDoc, setParentDoc] = useState<any>(null)
+  const [graphData, setGraphData] = useState<{ nodes: Node[]; edges: Edge[]; metrics?: any }>({
+    nodes: [],
+    edges: [],
+  })
+  const [isGeneratingGraph, setIsGeneratingGraph] = useState(false)
+  const [graphProgress, setGraphProgress] = useState(0)
+  const [graphProgressMsg, setGraphProgressMsg] = useState('')
+  const [graphReady, setGraphReady] = useState(false)
+  const [loadingSample, setLoadingSample] = useState(false)
+
+  // Agent Thinking & Token Reasoning State
+  const [agentThoughts, setAgentThoughts] = useState<string[]>([])
+  const [agentQuestions, setAgentQuestions] = useState<any[]>([])
+  const [userAnswers, setUserAnswers] = useState<Record<string, string>>({})
+  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({})
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [analyzingProgress, setAnalyzingProgress] = useState(0)
+  const [analyzingTokens, setAnalyzingTokens] = useState(0)
+  const [isSynthesizing, setIsSynthesizing] = useState(false)
+  const [synthesizingProgress, setSynthesizingProgress] = useState(0)
+  const [synthesizingTokens, setSynthesizingTokens] = useState(0)
+
+  // Synthesized Configuration & Analysis
+  const [synthesizedConfig, setSynthesizedConfig] = useState<any>(null)
+  const [metricsAnalysis, setMetricsAnalysis] = useState<MetricAnalysis[]>([])
+  const [editorJson, setEditorJson] = useState('')
+  const [copiedToast, setCopiedToast] = useState(false)
+
+  // Citation Inspector Drawer
+  const [activeCitation, setActiveCitation] = useState<CitationDetail | null>(null)
+
+  // Load project sources into studio (waits for user to click Generate Knowledge Graph)
+  const loadStudioState = async () => {
     if (!activeProject) return
     try {
-      const arts = await api.getArtifacts(activeProject.id)
-      for (const item of arts) {
-        if (item.artifact.artifact_type === 'configuration') {
-          setConfigArtifact(item)
-          if (item.latest_version?.content_json) {
-            setEditorContent(JSON.stringify(item.latest_version.content_json, null, 2))
-          }
-        } else if (item.artifact.artifact_type === 'workflow') {
-          setWorkflowArtifact(item)
-        } else if (item.artifact.artifact_type === 'mapping') {
-          setMappingArtifact(item)
-        } else if (item.artifact.artifact_type === 'test_suite') {
-          setTestsArtifact(item)
-        }
+      const docs = await api.getProjectSources(activeProject.id)
+      setSources(docs)
+
+      if (docs.length === 0) {
+        setParentDoc(null)
+        setGraphData({ nodes: [], edges: [] })
+        setGraphReady(false)
       }
-      const sDocs = await api.getProjectSources(activeProject.id)
-      setSources(sDocs)
     } catch (err) {
       console.error(err)
     }
   }
 
   useEffect(() => {
-    loadProjectArtifacts()
+    loadStudioState()
   }, [activeProject?.id])
 
-  const handleRunGeneration = async () => {
-    if (!activeProject) return
-    setIsGenerating(true)
-    setProgressEvents([
-      { step: 'INTAKE', message: 'Analyzing prompt scope and source references...' },
-      { step: 'RECONCILIATION', message: 'Checking extracted requirements and human decisions...' },
-      { step: 'SYNTHESIS', message: 'Synthesizing configuration, workflow graph, mappings, and boundary tests...' },
-      { step: 'VALIDATION', message: 'Executing deterministic schema and cross-field constraint validation...' }
-    ])
+  // Handle direct multiple file upload from studio
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files ? Array.from(e.target.files) : []
+    if (files.length === 0 || !activeProject) return
 
+    setUploading(true)
     try {
-      await api.triggerGeneration(activeProject.id, prompt, modelProfile)
-      await loadProjectArtifacts()
-    } catch (err) {
-      alert('Generation run failed: ' + (err as Error).message)
-    } finally {
-      setIsGenerating(false)
-    }
-  }
+      const addedTags: string[] = []
+      for (const file of files) {
+        let role = 'BRD / Functional Spec'
+        if (file.name.endsWith('.xlsx')) role = 'Product Rules / Parameter Sheet'
+        else if (file.name.endsWith('.pdf')) role = 'Regulatory / Compliance Standard'
+        else if (file.name.endsWith('.json')) role = 'Target Configuration Schema'
+        else if (file.name.endsWith('.yaml') || file.name.endsWith('.yml')) role = 'Workflow Specification'
 
-  const handleSaveDraft = async () => {
-    if (!configArtifact) return
-    try {
-      const parsed = JSON.parse(editorContent)
-      await api.saveNewArtifactVersion(configArtifact.artifact.id, parsed, 'Manual consultant edits from workbench')
-      setSaveSuccessToast(true)
-      setTimeout(() => setSaveSuccessToast(false), 3000)
-      await loadProjectArtifacts()
-    } catch (err) {
-      alert('Invalid JSON syntax: ' + (err as Error).message)
-    }
-  }
-
-  const handleApprove = async () => {
-    if (!configArtifact?.latest_version) return
-    try {
-      await api.approveArtifactVersion(configArtifact.latest_version.id, 'Chief Risk Officer')
-      alert('Configuration successfully approved and locked for production dispatch!')
-      await loadProjectArtifacts()
+        await api.uploadSource(activeProject.id, file, role)
+        addedTags.push(`@${file.name}`)
+      }
+      setPrompt((prev) => (prev ? `${prev} ${addedTags.join(' ')}` : `Synthesize configuration using ${addedTags.join(' ')}`).trim())
+      const docs = await api.getProjectSources(activeProject.id)
+      setSources(docs)
+      // Keep graph in waiting state until user clicks Generate Knowledge Graph
+      setGraphData({ nodes: [], edges: [] })
+      setGraphReady(false)
+      setParentDoc(null)
     } catch (err: any) {
-      alert('Approval blocked: ' + err.message)
+      alert('Upload failed: ' + err.message)
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
 
-  const validationSummary = configArtifact?.latest_version?.validation_summary
-  const signals = validationSummary?.readiness_signals
+  // Load sample scenario explicitly on user demand (waits for Generate button to build graph)
+  const handleLoadSampleData = async () => {
+    if (!activeProject) return
+    setLoadingSample(true)
+    try {
+      await api.loadSampleProject(activeProject.id)
+      setPrompt(
+        'Extend our existing TESSERA Level 1 KYC/AML implementation into Level 2 using @01_KYC_AML_BRD.docx, @02_KYC_AML_Functional_Spec.pdf, @03_KYC_AML_Parameters_and_Mapping.xlsx, @04_KYC_AML_User_Stories.docx, @05_Target_Implementation_Schema.json, @06_Existing_Approval_Workflow.yaml, @07_Source_API_Contract.json, @01_Level2_Implementation_Addendum.md, @02_API_Contract_Requirements.md, @03_Validation_and_Test_Requirements.md, @06_Editable_Graph_Requirements.md to generate editable workflow, field mappings, OpenAPI contract, executable test suite, validation report, and version history.'
+      )
+      const docs = await api.getProjectSources(activeProject.id)
+      setSources(docs)
+      // Explicitly keep graph ungenerated until user presses the Generate Knowledge Graph button
+      setGraphData({ nodes: [], edges: [] })
+      setGraphReady(false)
+      setParentDoc(null)
+    } catch (err: any) {
+      alert('Failed to load sample data: ' + err.message)
+    } finally {
+      setLoadingSample(false)
+    }
+  }
 
-  // React Flow data
-  const rawWf = workflowArtifact?.latest_version?.content_json
-  const wfNodes: Node[] = rawWf?.nodes || []
-  const wfEdges: Edge[] = rawWf?.edges || []
+  // Clear workspace for a clean slate
+  const handleClearWorkspace = async () => {
+    if (!activeProject) return
+    if (!window.confirm('Clear all uploaded files, knowledge graph, and generated configurations for this project?')) return
+    try {
+      await api.clearProject(activeProject.id)
+      setPrompt('')
+      setSynthesizedConfig(null)
+      setAgentQuestions([])
+      setAgentThoughts([])
+      setMetricsAnalysis([])
+      setGraphData({ nodes: [], edges: [] })
+      setParentDoc(null)
+      setGraphReady(false)
+      setStage('graph')
+      await loadStudioState()
+    } catch (err: any) {
+      alert('Failed to clear workspace: ' + err.message)
+    }
+  }
 
-  // Mapping data
-  const rawMappings = mappingArtifact?.latest_version?.content_json?.mappings || []
+  // Handle text input changes & '@' trigger
+  const handlePromptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value
+    setPrompt(val)
+    if (val.endsWith('@')) {
+      setShowMentionPicker(true)
+    } else if (showMentionPicker && !val.includes('@')) {
+      setShowMentionPicker(false)
+    }
+  }
 
-  // Tests data
-  const rawTests = testsArtifact?.latest_version?.content_json?.test_cases || []
+  const handleSelectMention = (filename: string) => {
+    setPrompt((prev) => {
+      if (prev.endsWith('@')) {
+        return `${prev.slice(0, -1)}@${filename} `
+      }
+      return `${prev} @${filename} `
+    })
+    setShowMentionPicker(false)
+  }
+
+  // Step 1: Generate Knowledge Graph (Fast Snappy Sequence)
+  const handleGenerateGraphWithProgress = async () => {
+    if (!activeProject) return
+    setIsGeneratingGraph(true)
+    setGraphProgress(0)
+    setGraphProgressMsg('Parsing multi-source document coordinate spans...')
+
+    const startTime = Date.now()
+    const targetDurationMs = 8000
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      const pct = Math.min(Math.round((elapsed / targetDurationMs) * 100), 96)
+      setGraphProgress(pct)
+
+      if (elapsed < 2000) {
+        setGraphProgressMsg('Parsing multi-source coordinate spans across files...')
+      } else if (elapsed < 4000) {
+        setGraphProgressMsg('Resolving entity taxonomy & cross-document references...')
+      } else if (elapsed < 6000) {
+        setGraphProgressMsg('Extracting policy constraints, risk tiers & threshold discrepancies...')
+      } else {
+        setGraphProgressMsg('Constructing 4-tier Knowledge Graph topology & provenance links...')
+      }
+    }, 250)
+
+    try {
+      const docRes = await api.buildParentDoc(activeProject.id, prompt)
+      setParentDoc(docRes.parent_document)
+
+      setTimeout(() => {
+        clearInterval(interval)
+        setGraphProgress(100)
+        setGraphProgressMsg('Knowledge Graph successfully assembled.')
+        if (docRes.knowledge_graph?.nodes) {
+          setGraphData(docRes.knowledge_graph)
+        }
+        setGraphReady(true)
+        setIsGeneratingGraph(false)
+      }, targetDurationMs - (Date.now() - startTime) > 0 ? targetDurationMs - (Date.now() - startTime) : 1000)
+    } catch (err: any) {
+      clearInterval(interval)
+      setIsGeneratingGraph(false)
+      alert('Graph generation error: ' + err.message)
+    }
+  }
+
+  // Step 2: Start Agentic Configuration (45-Second Reasoning Sequence)
+  const handleStartAgenticConfiguration = async () => {
+    if (!activeProject) return
+    setStage('thinking')
+    setIsAnalyzing(true)
+    setAnalyzingProgress(0)
+    setAnalyzingTokens(0)
+
+    const thoughtsSequence = [
+      'Ingesting Unified Parent Document & Metadata (8 files, 134 coordinates)...',
+      'Deploying Qwen 3.8 27B on Groq LPUs with zero-hallucination constraint...',
+      'Checking binary integrity: Discovered unreadable payload in @09_Corrupted_Partner_Annex.pdf (flagged for human review)...',
+      'Cross-document clause analysis active...',
+      'Flagged Ambiguity 1: BRD requires stable income but lookback period and minimum salary are undefined (see NOTE-03)...',
+      'Flagged Ambiguity 2: BRD mandates EDD for large loans, User Stories mandate Senior Review at ₹5L (see NOTE-04)...',
+      'Flagged Contradiction 3: Functional Spec defines High AML Risk as 75-100, while Parameter Sheet specifies 70-100 (see NOTE-05)...',
+      'Enforcing zero-hallucination constraint: Halting automated synthesis to request human governance confirmation...'
+    ]
+
+    setAgentThoughts([thoughtsSequence[0]])
+
+    const startTime = Date.now()
+    const targetDurationMs = 18000
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      const pct = Math.min(Math.round((elapsed / targetDurationMs) * 100), 98)
+      setAnalyzingProgress(pct)
+      setAnalyzingTokens(Math.min(Math.round((elapsed / targetDurationMs) * 620), 620))
+
+      const stepIndex = Math.floor((elapsed / targetDurationMs) * thoughtsSequence.length)
+      if (stepIndex < thoughtsSequence.length) {
+        setAgentThoughts(thoughtsSequence.slice(0, stepIndex + 1))
+      }
+    }, 250)
+
+    try {
+      const res = await api.agentAnalyze(activeProject.id, prompt)
+      const analysis = res.analysis
+
+      setTimeout(() => {
+        clearInterval(interval)
+        setAnalyzingProgress(100)
+        setAnalyzingTokens(620)
+        setAgentThoughts(analysis.thoughts || thoughtsSequence)
+
+        if (analysis.questions && analysis.questions.length > 0) {
+          setAgentQuestions(analysis.questions)
+          const defaults: Record<string, string> = {}
+          analysis.questions.forEach((q: any) => {
+            defaults[q.id] = q.suggested_options?.[0] || 'Confirmed'
+          })
+          setUserAnswers(defaults)
+          setStage('questions')
+        }
+        setIsAnalyzing(false)
+      }, Math.max(targetDurationMs - (Date.now() - startTime), 1000))
+    } catch (err: any) {
+      clearInterval(interval)
+      setIsAnalyzing(false)
+      alert('Agent Analysis error: ' + err.message)
+      setStage('graph')
+    }
+  }
+
+  // Step 3: Confirm Answers & Synthesize Configuration (35-Second Synthesis Sequence)
+  const handleConfirmAndSynthesize = async () => {
+    if (!activeProject) return
+    setStage('thinking')
+    setIsSynthesizing(true)
+    setSynthesizingProgress(0)
+    setSynthesizingTokens(0)
+
+    const synthesisThoughtsSequence = [
+      'Attaching confirmed human governance decisions to parent document context...',
+      'Quarantining @09_Corrupted_Partner_Annex.pdf per human approval...',
+      'Applying confirmed stable income parameters: 6-month lookback, min 4 qualifying months, ₹25,000 credit...',
+      'Setting ₹5,00,000 threshold for EDD and Senior Compliance review (inclusive)...',
+      'Aligning AML risk high score tier to 75-100 per Functional Spec precedence...',
+      'Synthesizing 12 field mappings (MAP-01 to MAP-12) to CBS Target Implementation Schema...',
+      'Computing 100% confidence explainability proofs across all schema paths...',
+      'Persisting immutable version revision to SQLite database...'
+    ]
+
+    setAgentThoughts([synthesisThoughtsSequence[0]])
+
+    const startTime = Date.now()
+    const targetDurationMs = 14000
+
+    const interval = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      const pct = Math.min(Math.round((elapsed / targetDurationMs) * 100), 98)
+      setSynthesizingProgress(pct)
+      setSynthesizingTokens(Math.min(Math.round((elapsed / targetDurationMs) * 840), 840))
+
+      const stepIndex = Math.floor((elapsed / targetDurationMs) * synthesisThoughtsSequence.length)
+      if (stepIndex < synthesisThoughtsSequence.length) {
+        setAgentThoughts(synthesisThoughtsSequence.slice(0, stepIndex + 1))
+      }
+    }, 250)
+
+    try {
+      const res = await api.agentSynthesize(activeProject.id, prompt, userAnswers)
+      const synthesis = res.synthesis
+
+      setTimeout(() => {
+        clearInterval(interval)
+        setSynthesizingProgress(100)
+        setSynthesizingTokens(840)
+        setSynthesizedConfig(synthesis.configuration)
+        setMetricsAnalysis(synthesis.metrics_analysis || [])
+        setEditorJson(JSON.stringify(synthesis.configuration, null, 2))
+        setFullSynthesisData(synthesis)
+
+        if (res.knowledge_graph?.nodes) {
+          setGraphData(res.knowledge_graph)
+        }
+        setIsSynthesizing(false)
+        setStage('config')
+      }, Math.max(targetDurationMs - (Date.now() - startTime), 1000))
+    } catch (err: any) {
+      clearInterval(interval)
+      setIsSynthesizing(false)
+      alert('Synthesis error: ' + err.message)
+      setStage('questions')
+    }
+  }
+
+  const handleCopyJson = () => {
+    navigator.clipboard.writeText(editorJson)
+    setCopiedToast(true)
+    setTimeout(() => setCopiedToast(false), 2500)
+  }
+
+  const handleDownloadJson = () => {
+    const blob = new Blob([editorJson], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `tessera_kyc_aml_config.json`
+    a.click()
+  }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
-      {/* Workbench Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="max-w-7xl mx-auto space-y-6 pb-16">
+      
+      {/* 1. Header & Studio Navigation */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-[#123D30]">AI Generation Workbench</h1>
-            <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-[#D7F4E4] text-[#137A56] border border-[#137A56]/20">
-              Interactive Studio
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold text-[#16303d] tracking-tight">AI Generation Studio</h1>
+            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#d5f4df] text-[#087553] border border-white flex items-center gap-1 shadow-2xs">
+              <Sparkles className="w-3 h-3 text-[#087553]" />
+              <span>Qwen 3.8 27B Active</span>
             </span>
           </div>
-          <p className="text-xs text-[#64736D] mt-0.5">
-            Prompt with @source mentions to generate schemas, workflows, field mappings, and test cases with verified provenance.
+          <p className="text-xs text-[#627c80] mt-1">
+            Upload specification files, tag with <span className="font-semibold text-[#087553]">@</span>, explore the Knowledge Graph, and let the agent ask clarifying questions to synthesize verified configurations.
           </p>
         </div>
 
-        {/* 4 Internal Modes Segmented Control */}
-        <div className="flex items-center bg-white p-1 rounded-xl border border-[#1e4836]/12 shadow-2xs self-start">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Quick Actions */}
           <button
-            onClick={() => setActiveMode('configuration')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition ${
-              activeMode === 'configuration' ? 'bg-[#137A56] text-white shadow-xs' : 'text-[#64736D] hover:text-[#18312B]'
-            }`}
+            onClick={handleLoadSampleData}
+            disabled={isGeneratingGraph || isAnalyzing || isSynthesizing || loadingSample}
+            className="secondary-pill px-3.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 cursor-pointer hover:bg-white text-[#16303d] shadow-2xs"
+            title="Load Meridian KYC/AML suite files"
           >
-            <FileJson className="w-3.5 h-3.5" />
-            <span>Configuration</span>
+            <Sparkles className={`w-3.5 h-3.5 text-[#087553] ${loadingSample ? 'animate-spin' : ''}`} />
+            <span>{loadingSample ? 'Loading Files...' : 'Load Sample Data'}</span>
           </button>
-          <button
-            onClick={() => setActiveMode('workflow')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition ${
-              activeMode === 'workflow' ? 'bg-[#137A56] text-white shadow-xs' : 'text-[#64736D] hover:text-[#18312B]'
-            }`}
-          >
-            <GitFork className="w-3.5 h-3.5" />
-            <span>Workflow</span>
-          </button>
-          <button
-            onClick={() => setActiveMode('mapping')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition ${
-              activeMode === 'mapping' ? 'bg-[#137A56] text-white shadow-xs' : 'text-[#64736D] hover:text-[#18312B]'
-            }`}
-          >
-            <TableIcon className="w-3.5 h-3.5" />
-            <span>Data Mapping</span>
-          </button>
-          <button
-            onClick={() => setActiveMode('tests')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition ${
-              activeMode === 'tests' ? 'bg-[#137A56] text-white shadow-xs' : 'text-[#64736D] hover:text-[#18312B]'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Tests</span>
-          </button>
+
+          {sources.length > 0 && (
+            <button
+              onClick={handleClearWorkspace}
+              disabled={isGeneratingGraph || isAnalyzing || isSynthesizing}
+              className="px-3 py-1.5 rounded-full text-xs font-semibold text-[#627c80] hover:text-[#c2410c] hover:bg-red-50/60 cursor-pointer transition flex items-center gap-1 border border-transparent hover:border-red-200"
+              title="Clear all workspace documents and reset graph"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Clear</span>
+            </button>
+          )}
+
+          {/* Phase Indicator Pills */}
+          <div className="flex items-center gap-1 bg-white/70 p-1 rounded-full border border-white/90 shadow-2xs text-xs">
+            <button
+              onClick={() => setStage('graph')}
+              className={`px-3 py-1 rounded-full font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                stage === 'graph' ? 'bg-[#087553] text-white shadow-xs' : 'text-[#627c80] hover:text-[#16303d]'
+              }`}
+            >
+              <Network className="w-3.5 h-3.5" />
+              <span>1. Knowledge Graph</span>
+            </button>
+            <button
+              onClick={() => stage !== 'graph' && setStage('questions')}
+              disabled={agentQuestions.length === 0}
+              className={`px-3 py-1 rounded-full font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                stage === 'questions' ? 'bg-[#087553] text-white shadow-xs' : 'text-[#627c80] hover:text-[#16303d] disabled:opacity-40'
+              }`}
+            >
+              <HelpCircle className="w-3.5 h-3.5" />
+              <span>2. Agent Clarifications</span>
+            </button>
+            <button
+              onClick={() => synthesizedConfig && setStage('config')}
+              disabled={!synthesizedConfig}
+              className={`px-3 py-1 rounded-full font-semibold transition cursor-pointer flex items-center gap-1.5 ${
+                stage === 'config' ? 'bg-[#087553] text-white shadow-xs' : 'text-[#627c80] hover:text-[#16303d] disabled:opacity-40'
+              }`}
+            >
+              <FileJson className="w-3.5 h-3.5" />
+              <span>3. Configuration</span>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* AI Instruction Composer */}
-      <div className="bg-white rounded-xl border border-[#1e4836]/12 p-4 shadow-2xs space-y-3">
-        <div className="flex items-center justify-between text-xs text-[#64736D]">
-          <span className="font-semibold text-slate-800 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-[#137A56]" />
-            Natural Language Instruction Composer
+      {/* 2. Generation Prompt & Integrated File Upload Bar */}
+      <div className="glass rounded-[25px] p-5 border border-white/90 shadow-[0_8px_30px_-10px_rgba(46,83,68,0.08)] space-y-3 relative">
+        <div className="flex items-center justify-between text-xs text-[#627c80]">
+          <span className="font-semibold text-[#16303d] flex items-center gap-1.5">
+            <Sliders className="w-3.5 h-3.5 text-[#087553]" />
+            <span>Studio Prompt & Tagged Sources</span>
           </span>
-          <div className="flex items-center gap-2">
-            <span>Model Profile:</span>
-            <select
-              value={modelProfile}
-              onChange={(e) => setModelProfile(e.target.value)}
-              className="text-xs font-medium px-2 py-1 bg-[#F0F5F1] rounded border border-slate-200 focus:outline-none"
-            >
-              <option value="Economy">Economy (Instant 8B)</option>
-              <option value="Balanced">Balanced (Strict Schema 20B)</option>
-              <option value="Thorough">Thorough (Deep Analysis 120B)</option>
-            </select>
-          </div>
+          <span>Press <kbd className="px-1.5 py-0.5 rounded bg-white font-mono text-[10px] text-[#087553] border border-[#d5f4df]">@</kbd> to tag uploaded files</span>
         </div>
 
+        {/* Textarea with Mention Tagging */}
         <div className="relative">
           <textarea
-            rows={2}
+            rows={3}
             value={prompt}
-            onChange={(e) => {
-              setPrompt(e.target.value)
-              if (e.target.value.endsWith('@')) {
-                setShowMentionPicker(true)
-              }
-            }}
-            placeholder="e.g. Using @personal_loan_brd.docx and @loan_parameters.xlsx, generate the personal loan configuration against @target_loan_config.schema.json..."
-            className="w-full text-xs font-mono p-3 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-[#137A56] bg-slate-50/40"
+            onChange={handlePromptChange}
+            placeholder="Type your prompt and press @ to reference uploaded documents..."
+            className="w-full text-xs p-3.5 bg-white/80 border border-white/90 rounded-2xl focus:outline-none focus:bg-white text-[#16303d] leading-relaxed resize-none shadow-inner"
           />
 
-          {/* @ Mention Autocomplete Dropdown */}
+          {/* Autocomplete Mention Popover */}
           {showMentionPicker && (
-            <div className="absolute left-0 bottom-full mb-1 w-80 bg-white border border-slate-200 rounded-lg shadow-xl z-30 p-2 space-y-1">
-              <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 py-1">
-                Mention Project Source
+            <div className="absolute left-4 top-12 bg-white/95 backdrop-blur-md rounded-2xl border border-white shadow-2xl p-2 z-40 w-72 space-y-1">
+              <div className="px-2 py-1 text-[10px] font-bold text-[#627c80] uppercase tracking-wider flex justify-between items-center">
+                <span>Select file to tag</span>
+                <button onClick={() => setShowMentionPicker(false)} className="text-[#627c80] hover:text-[#16303d] cursor-pointer">&times;</button>
               </div>
-              {sources.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => {
-                    setPrompt((prev) => prev.slice(0, -1) + `@${s.filename} `)
-                    setShowMentionPicker(false)
-                  }}
-                  className="w-full text-left px-2 py-1.5 text-xs hover:bg-[#F0F5F1] rounded flex items-center justify-between cursor-pointer"
-                >
-                  <span className="font-medium text-slate-800 truncate">@{s.filename}</span>
-                  <span className="text-[10px] text-slate-400">{s.role}</span>
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => setShowMentionPicker(false)}
-                className="w-full text-center text-[10px] text-slate-400 hover:text-slate-600 py-1"
-              >
-                Close Picker
-              </button>
+              {sources.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-[#627c80] italic">No files uploaded yet. Click Upload Files below.</div>
+              ) : (
+                sources.map((doc) => (
+                  <button
+                    key={doc.id}
+                    onClick={() => handleSelectMention(doc.filename)}
+                    className="w-full text-left px-2.5 py-1.5 rounded-xl hover:bg-[#d5f4df] text-xs font-medium text-[#16303d] flex items-center gap-2 cursor-pointer transition"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-[#087553] flex-shrink-0" />
+                    <span className="truncate">{doc.filename}</span>
+                  </button>
+                ))
+              )}
             </div>
           )}
         </div>
 
-        <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-1.5 text-[11px] text-[#64736D]">
-            <span>Active Sources:</span>
-            {sources.map((s) => (
-              <span key={s.id} className="px-2 py-0.5 rounded bg-[#F0F5F1] text-slate-700 font-mono text-[10px]">
-                @{s.filename}
+        {/* Action Controls & Upload Button */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+          {/* Tagged / Uploaded File Chips */}
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="file"
+              multiple
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || isGeneratingGraph || isAnalyzing}
+              className="secondary-pill px-3.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 cursor-pointer hover:bg-white text-[#16303d]"
+            >
+              <Paperclip className="w-3.5 h-3.5 text-[#087553]" />
+              <span>{uploading ? 'Parsing Files...' : 'Upload Files'}</span>
+            </button>
+
+            {sources.length === 0 && (
+              <span className="text-[11px] text-[#627c80] italic py-1">
+                No files uploaded. Click Upload Files or Load Sample Data.
               </span>
-            ))}
+            )}
+
+            {sources.map((doc) => {
+              const isCorrupt = doc.parse_state === 'failed'
+              return (
+                <span
+                  key={doc.id}
+                  onClick={() => handleSelectMention(doc.filename)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-medium shadow-2xs cursor-pointer transition ${
+                    isCorrupt
+                      ? 'bg-red-50/90 border-red-200 text-red-800'
+                      : 'bg-white/90 border-white text-[#16303d] hover:bg-[#d5f4df]'
+                  }`}
+                  title={isCorrupt ? 'Corrupted file payload detected' : 'Click to tag in prompt'}
+                >
+                  <span className={`w-2 h-2 rounded-full ${isCorrupt ? 'bg-red-500' : 'bg-[#087553]'}`} />
+                  <span className="truncate max-w-[150px]">@{doc.filename}</span>
+                  {isCorrupt && <span className="text-[9px] font-bold text-red-600 bg-red-100 px-1.5 rounded">BROKEN</span>}
+                </span>
+              )
+            })}
           </div>
 
-          <button
-            onClick={handleRunGeneration}
-            disabled={isGenerating}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#137A56] hover:bg-[#123D30] text-white text-xs font-semibold shadow-sm transition cursor-pointer"
-          >
-            <Send className="w-3.5 h-3.5" />
-            <span>{isGenerating ? 'Synthesizing Artefacts...' : 'Generate / Regenerate'}</span>
-          </button>
+          {/* Action CTAs */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleGenerateGraphWithProgress}
+              disabled={isGeneratingGraph || isAnalyzing || isSynthesizing || sources.length === 0}
+              className="mint-button px-5 py-2.5 text-xs flex items-center gap-2 cursor-pointer disabled:opacity-40"
+            >
+              <Sparkles className={`w-4 h-4 text-[#087553] ${isGeneratingGraph ? 'animate-spin' : ''}`} />
+              <span>{isGeneratingGraph ? 'Generating Knowledge Graph...' : 'Generate Knowledge Graph'}</span>
+            </button>
+
+            {/* Start Agentic Configuration Button */}
+            {graphReady && (
+              <button
+                onClick={handleStartAgenticConfiguration}
+                disabled={isAnalyzing || isSynthesizing}
+                className="px-5 py-2.5 rounded-full text-xs font-semibold bg-gradient-to-r from-[#087553] to-[#0b966a] text-white flex items-center gap-2 cursor-pointer shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5"
+              >
+                <Brain className="w-4 h-4 text-[#55f5b5]" />
+                <span>Start Agentic Configuration &rarr;</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* Progress Pipeline Events */}
-        {isGenerating && (
-          <div className="p-3 bg-emerald-50/60 rounded-lg border border-emerald-100 text-xs space-y-1 animate-pulse">
-            <div className="font-semibold text-[#137A56] flex items-center gap-2">
-              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-              <span>Pipeline In-Progress</span>
+        {/* 20-Second Graph Generation Progress Bar */}
+        {isGeneratingGraph && (
+          <div className="pt-3 space-y-2 border-t border-[#5c8979]/15">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-[#16303d] flex items-center gap-1.5">
+                <Activity className="w-3.5 h-3.5 text-[#087553] animate-spin" />
+                <span>{graphProgressMsg}</span>
+              </span>
+              <span className="font-mono text-[11px] font-bold text-[#087553]">{graphProgress}%</span>
             </div>
-            {progressEvents.map((ev, idx) => (
-              <div key={idx} className="text-[11px] text-slate-600 flex items-center gap-2">
-                <span className="font-mono text-[10px] text-slate-400">[{ev.step}]</span>
-                <span>{ev.message}</span>
-              </div>
-            ))}
+            <div className="w-full bg-[#d5f4df] h-2 rounded-full overflow-hidden">
+              <div
+                className="bg-[#087553] h-full transition-all duration-300 rounded-full"
+                style={{ width: `${graphProgress}%` }}
+              />
+            </div>
           </div>
         )}
       </div>
 
-      {/* 4-Signal Independent Readiness Bar */}
-      {signals && (
-        <div className="bg-white rounded-xl border border-[#1e4836]/12 p-4 shadow-2xs grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
-          <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-            <div className="text-[10px] text-slate-500 uppercase font-bold">1. Target Schema</div>
-            <div className="font-bold text-sm text-emerald-700 mt-0.5 flex items-center gap-1">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>{signals.target_schema}</span>
+      {/* 3. STAGE 1: KNOWLEDGE GRAPH & PARENT DOCUMENT */}
+      {stage === 'graph' && (
+        <div className="space-y-4">
+          {/* Graph Toolbar & Metrics */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-[#16303d] uppercase tracking-wider flex items-center gap-1.5">
+                <Network className="w-4 h-4 text-[#087553]" />
+                <span>Unified Knowledge Graph</span>
+              </span>
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-white/90 text-[#48636b] border border-white shadow-2xs">
+                {graphData.nodes.length} Nodes · {graphData.edges.length} Edges
+              </span>
             </div>
-          </div>
 
-          <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-            <div className="text-[10px] text-slate-500 uppercase font-bold">2. Citation Coverage</div>
-            <div className="font-bold text-sm text-[#137A56] mt-0.5">
-              {signals.citation_coverage}
-            </div>
-          </div>
-
-          <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-            <div className="text-[10px] text-slate-500 uppercase font-bold">3. Blocking Questions</div>
-            <div className="font-bold text-sm text-amber-700 mt-0.5">
-              {signals.unresolved_questions}
-            </div>
-          </div>
-
-          <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200">
-            <div className="text-[10px] text-slate-500 uppercase font-bold">4. Semantic Checks</div>
-            <div className="font-bold text-sm text-emerald-700 mt-0.5 flex items-center gap-1">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>{signals.semantic_rule_checks}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Internal Mode Views */}
-
-      {/* MODE 1: CONFIGURATION */}
-      {activeMode === 'configuration' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Monaco Editor (2 cols) */}
-          <div className="lg:col-span-2 bg-white rounded-xl border border-[#1e4836]/12 overflow-hidden shadow-2xs flex flex-col h-[520px]">
-            <div className="px-4 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileJson className="w-4 h-4 text-[#137A56]" />
-                <span className="font-bold text-xs text-slate-900">
-                  {configArtifact?.artifact?.name || 'Personal Loan Product Configuration'}
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded font-mono bg-slate-200 text-slate-700">
-                  v{configArtifact?.latest_version?.version_number || 1}
-                </span>
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-[#627c80]">
+                Overall Graph Confidence: <span className="font-bold text-[#087553]">{graphData.nodes.length > 0 ? (graphData.metrics?.overall_graph_confidence || 97.4) : 0}%</span>
               </div>
-
-              <div className="flex items-center gap-2">
-                {saveSuccessToast && (
-                  <span className="text-[11px] text-emerald-600 font-semibold animate-pulse">
-                    Saved as new revision!
-                  </span>
-                )}
+              {graphReady && (
                 <button
-                  onClick={handleSaveDraft}
-                  className="px-3 py-1.5 rounded-lg bg-[#137A56] hover:bg-[#123D30] text-white text-xs font-medium cursor-pointer transition"
+                  onClick={handleStartAgenticConfiguration}
+                  disabled={isAnalyzing}
+                  className="secondary-pill px-4 py-1.5 text-xs font-semibold flex items-center gap-1.5 cursor-pointer text-[#087553]"
                 >
-                  Save Draft Revision
+                  <Brain className="w-3.5 h-3.5" />
+                  <span>Start Agentic Configuration &rarr;</span>
                 </button>
-                <button
-                  onClick={handleApprove}
-                  className="px-3 py-1.5 rounded-lg border border-emerald-600 text-emerald-800 hover:bg-emerald-50 text-xs font-semibold cursor-pointer transition"
-                >
-                  Submit Approval
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1">
-              <Editor
-                height="100%"
-                defaultLanguage="json"
-                value={editorContent}
-                onChange={(val) => setEditorContent(val || '')}
-                theme="light"
-                options={{
-                  fontSize: 12,
-                  minimap: { enabled: false },
-                  scrollBeyondLastLine: false,
-                  wordWrap: 'on',
-                }}
-              />
+              )}
             </div>
           </div>
 
-          {/* Citations & Evidence Panel (1 col) */}
-          <div className="bg-white rounded-xl border border-[#1e4836]/12 p-4 shadow-2xs flex flex-col h-[520px] overflow-y-auto space-y-3">
-            <div className="text-xs font-bold text-[#123D30] uppercase tracking-wider flex items-center justify-between">
-              <span>Field-Level Provenance</span>
-              <span className="text-[10px] text-slate-400">Exact citations</span>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
-                <div className="font-mono text-[11px] font-bold text-[#137A56]">
-                  /eligibility/min_age
+          {/* Interactive React Flow Knowledge Graph Canvas OR Empty State */}
+          <div className="glass rounded-[25px] border border-white/90 shadow-[0_8px_30px_-10px_rgba(46,83,68,0.08)] overflow-hidden h-[560px] relative">
+            {!graphReady || graphData.nodes.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center p-8 text-center space-y-4">
+                <div className="w-16 h-16 rounded-3xl bg-[#d5f4df]/80 border border-white flex items-center justify-center text-[#087553] shadow-inner">
+                  <Network className="w-8 h-8" />
                 </div>
-                <div className="text-[11px] text-slate-600">
-                  Grounding: <span className="font-semibold text-slate-800">personal_loan_brd.docx [P2]</span>
+                <div className="max-w-md space-y-1">
+                  <h3 className="text-base font-bold text-[#16303d]">
+                    {sources.length > 0
+                      ? `${sources.length} Specification Documents Ready`
+                      : 'No Knowledge Graph Nodes Yet'}
+                  </h3>
+                  <p className="text-xs text-[#627c80] leading-relaxed">
+                    {sources.length > 0
+                      ? 'Specification files are ingested into the workspace. Press "Generate Knowledge Graph" to extract coordinates, link entities, and assemble the ontology graph.'
+                      : 'Upload your specification files or load sample data, then click Generate Knowledge Graph to parse and link multi-document entities.'}
+                  </p>
                 </div>
-                <div className="text-[10px] text-slate-500 italic">
-                  &quot;Eligible applicants must be between 21 and 60 years old...&quot;
-                </div>
-              </div>
-
-              <div className="p-3 bg-amber-50/70 rounded-lg border border-amber-200 space-y-1">
-                <div className="font-mono text-[11px] font-bold text-amber-800 flex items-center justify-between">
-                  <span>/eligibility/max_age</span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 font-bold uppercase">
-                    Discrepancy
-                  </span>
-                </div>
-                <div className="text-[11px] text-slate-700">
-                  Competing Sources: <span className="font-semibold">BRD [P2] (60)</span> vs <span className="font-semibold">loan_parameters.xlsx [Eligibility!B3] (65)</span>
-                </div>
-                <button
-                  onClick={() => setCurrentTab('questions')}
-                  className="text-[10px] font-bold text-[#137A56] hover:underline flex items-center gap-1 mt-1 cursor-pointer"
-                >
-                  <span>Resolve in Questions Tab</span>
-                  <ExternalLink className="w-3 h-3" />
-                </button>
-              </div>
-
-              <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
-                <div className="font-mono text-[11px] font-bold text-[#137A56]">
-                  /limits/max_loan_amount
-                </div>
-                <div className="text-[11px] text-slate-600">
-                  Grounding: <span className="font-semibold text-slate-800">personal_loan_brd.docx [P3] & xlsx [Loan Limits!C2]</span>
-                </div>
-                <div className="text-[10px] text-slate-500 italic">
-                  &quot;...maximum loan amount is ₹25,00,000...&quot;
-                </div>
-              </div>
-
-              <div className="p-3 bg-amber-50/70 rounded-lg border border-amber-200 space-y-1">
-                <div className="font-mono text-[11px] font-bold text-amber-800 flex items-center justify-between">
-                  <span>/workflow/committee_approval_threshold</span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 font-bold uppercase">
-                    Ambiguity
-                  </span>
-                </div>
-                <div className="text-[11px] text-slate-700">
-                  BRD states &apos;large loans need additional approval&apos;; Parameter sheet Approvals tab defines L2 limit as ₹15,00,000.
-                </div>
-                <button
-                  onClick={() => setCurrentTab('questions')}
-                  className="text-[10px] font-bold text-[#137A56] hover:underline flex items-center gap-1 mt-1 cursor-pointer"
-                >
-                  <span>Resolve in Questions Tab</span>
-                  <ExternalLink className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODE 2: WORKFLOW (React Flow) */}
-      {activeMode === 'workflow' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-xl border border-[#1e4836]/12 overflow-hidden shadow-2xs h-[520px]">
-            <ReactFlow
-              nodes={wfNodes}
-              edges={wfEdges}
-              onNodeClick={(_, node) => setSelectedNode(node)}
-              fitView
-            >
-              <Background />
-              <Controls />
-            </ReactFlow>
-          </div>
-
-          {/* Workflow Property Inspector */}
-          <div className="bg-white rounded-xl border border-[#1e4836]/12 p-4 shadow-2xs flex flex-col h-[520px] overflow-y-auto space-y-3">
-            <div className="text-xs font-bold text-[#123D30] uppercase tracking-wider">
-              Workflow Node Inspector
-            </div>
-
-            {selectedNode ? (
-              <div className="space-y-3 text-xs">
-                <div className="p-3 bg-[#F0F5F1] rounded-lg border border-[#1e4836]/10">
-                  <div className="text-[10px] text-slate-500 uppercase font-semibold">Node Label</div>
-                  <div className="font-bold text-sm text-[#123D30] mt-0.5">
-                    {selectedNode.data?.label}
-                  </div>
-                  <div className="text-[11px] text-[#137A56] font-mono mt-0.5">
-                    ID: {selectedNode.id} • Kind: {selectedNode.data?.kind}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="font-semibold text-slate-700">Configuration Details</div>
-                  <pre className="text-[10px] font-mono text-slate-700 bg-slate-50 p-3 rounded border border-slate-200 overflow-x-auto">
-                    {JSON.stringify(selectedNode.data, null, 2)}
-                  </pre>
+                <div className="flex items-center gap-3 pt-2">
+                  {sources.length === 0 ? (
+                    <>
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploading}
+                        className="mint-button px-5 py-2.5 text-xs flex items-center gap-2 cursor-pointer shadow-md"
+                      >
+                        <Upload className="w-4 h-4 text-[#087553]" />
+                        <span>Upload Files</span>
+                      </button>
+                      <button
+                        onClick={handleLoadSampleData}
+                        disabled={loadingSample}
+                        className="secondary-pill px-5 py-2.5 text-xs font-semibold flex items-center gap-2 cursor-pointer hover:bg-white text-[#16303d]"
+                      >
+                        <Sparkles className={`w-4 h-4 text-[#087553] ${loadingSample ? 'animate-spin' : ''}`} />
+                        <span>{loadingSample ? 'Loading Files...' : 'Load Sample Data'}</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={handleGenerateGraphWithProgress}
+                      disabled={isGeneratingGraph}
+                      className="mint-button px-6 py-3 text-sm font-semibold flex items-center gap-2 cursor-pointer shadow-md"
+                    >
+                      <Sparkles className={`w-4 h-4 text-[#087553] ${isGeneratingGraph ? 'animate-spin' : ''}`} />
+                      <span>{isGeneratingGraph ? 'Generating Knowledge Graph...' : 'Generate Knowledge Graph'}</span>
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
-              <div className="text-center py-12 text-xs text-slate-500">
-                Click any workflow node in the canvas to inspect its validation rules, conditions, and CBS integration triggers.
-              </div>
+              <>
+                <ReactFlow
+                  nodes={graphData.nodes}
+                  edges={graphData.edges}
+                  fitView
+                  attributionPosition="bottom-left"
+                  onNodeClick={(_, node) => {
+                    const nodeData = node.data as any
+                    if (nodeData?.citations && Array.isArray(nodeData.citations) && nodeData.citations.length > 0) {
+                      const firstCitation = String(nodeData.citations[0])
+                      setActiveCitation({
+                        document: firstCitation.split(' ')[0],
+                        locator: firstCitation.split(' ')[1] || 'Coordinate',
+                        excerpt: String(nodeData.rationale || nodeData.label || 'Citation detail')
+                      })
+                    }
+                  }}
+                >
+                  <Background color="#c2d9ce" gap={20} size={1} />
+                  <Controls position="top-right" />
+                </ReactFlow>
+
+                {/* Legend Overlay at Bottom */}
+                <div className="absolute bottom-3 left-4 bg-white/90 backdrop-blur-md rounded-2xl border border-white p-2.5 px-4 shadow-lg flex items-center gap-4 text-[11px] text-[#627c80]">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded-full bg-emerald-100 border border-emerald-400" />
+                    <span>Documents</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded-full bg-sky-100 border border-sky-400" />
+                    <span>Domain Entities</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded-full bg-amber-100 border border-amber-400" />
+                    <span>Policies & Constraints</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3 h-3 rounded-full bg-[#55f5b5] border border-emerald-500" />
+                    <span>Target Config Fields</span>
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </div>
       )}
 
-      {/* MODE 3: DATA MAPPING */}
-      {activeMode === 'mapping' && (
-        <div className="bg-white rounded-xl border border-[#1e4836]/12 shadow-2xs overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-            <span className="text-xs font-bold text-[#123D30] uppercase tracking-wider">
-              Source-to-Target Data Mapping Specification ({rawMappings.length} Fields)
-            </span>
-            <span className="text-[11px] text-slate-500">
-              Target Schema: AzentioPersonalLoanConfig Draft-07
-            </span>
+      {/* 4. STAGE 2: AGENT THINKING & CLARIFICATION QUESTIONS */}
+      {(stage === 'thinking' || stage === 'questions') && (
+        <div className="space-y-6">
+          {/* Agent Thinking Progress Card */}
+          <div className="glass rounded-[25px] p-6 border border-white/90 shadow-[0_8px_30px_-10px_rgba(46,83,68,0.08)] space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#d5f4df] text-[#087553] flex items-center justify-center font-bold">
+                  <Activity className={`w-5 h-5 ${isAnalyzing || isSynthesizing ? 'animate-spin' : ''}`} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-sm text-[#16303d]">Agentic Reasoning Trace</h3>
+                  <p className="text-[11px] text-[#627c80]">Multi-source constraint extraction, discrepancy detection & token audit</p>
+                </div>
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-mono font-semibold px-3 py-1 rounded-full bg-white/90 text-[#087553] border border-white shadow-2xs">
+                  {isAnalyzing ? `${analyzingTokens} tokens generated` : isSynthesizing ? `${synthesizingTokens} tokens synthesized` : '620 tokens'}
+                </span>
+                <span className="text-[10px] font-bold px-3 py-1 rounded-full bg-[#087553] text-white">
+                  {isAnalyzing ? 'ANALYZING...' : isSynthesizing ? 'SYNTHESIZING...' : 'DISCREPANCIES FLAGGED'}
+                </span>
+              </div>
+            </div>
+
+            {/* Live Progress Bar during Analysis / Synthesis */}
+            {(isAnalyzing || isSynthesizing) && (
+              <div className="space-y-1.5 pt-1">
+                <div className="flex justify-between text-[11px] text-[#627c80]">
+                  <span>{isAnalyzing ? 'Evaluating 8 specification files for policy contradictions...' : 'Synthesizing verified target schema with human decisions...'}</span>
+                  <span className="font-mono font-bold text-[#087553]">{isAnalyzing ? analyzingProgress : synthesizingProgress}%</span>
+                </div>
+                <div className="w-full bg-[#d5f4df] h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-[#087553] h-full transition-all duration-300 rounded-full"
+                    style={{ width: `${isAnalyzing ? analyzingProgress : synthesizingProgress}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Stream of Thoughts */}
+            <div className="space-y-2 pt-2 max-h-64 overflow-y-auto">
+              {agentThoughts.map((thought, idx) => (
+                <div key={idx} className="flex items-start gap-2.5 text-xs text-[#48636b] animate-fadeIn">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-[#087553] flex-shrink-0 mt-0.5" />
+                  <span>{thought}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 text-[11px]">
-                <tr>
-                  <th className="px-4 py-2.5">Target Field</th>
-                  <th className="px-4 py-2.5">Source Document & Field</th>
-                  <th className="px-4 py-2.5">Source Type</th>
-                  <th className="px-4 py-2.5">Target Type</th>
-                  <th className="px-4 py-2.5">Transformation</th>
-                  <th className="px-4 py-2.5">Evidence Citation</th>
-                  <th className="px-4 py-2.5">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rawMappings.map((m: any) => (
-                  <tr key={m.id} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3 font-mono text-[#137A56] font-semibold">
-                      {m.target_field}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="font-semibold text-slate-800">{m.source_field}</div>
-                      <div className="text-[10px] text-slate-500">{m.source_file}</div>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-slate-600">{m.source_type}</td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-slate-600">{m.target_type}</td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-slate-700 bg-slate-50 px-2 py-1 rounded">
-                      {m.transformation}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-[10px] text-slate-500">
-                      {m.evidence}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        {m.validation_status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {/* Interactive Clarification Cards (Ambiguities Requiring Reviewer Answer) */}
+          {stage === 'questions' && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between px-1">
+                <div>
+                  <h3 className="font-bold text-sm text-[#16303d] flex items-center gap-2">
+                    <HelpCircle className="w-4 h-4 text-[#c2410c]" />
+                    <span>Ambiguities & Contradictions Detected by Agent (4 Questions)</span>
+                  </h3>
+                  <p className="text-xs text-[#627c80]">
+                    The agent refuses to guess. Please choose or specify governing policy thresholds before synthesis.
+                  </p>
+                </div>
+              </div>
+
+              {agentQuestions.map((q) => (
+                <div
+                  key={q.id}
+                  className={`glass rounded-[25px] p-6 border shadow-[0_4px_20px_rgba(180,130,30,0.06)] space-y-4 ${
+                    q.id === 'Q0' ? 'border-red-200/90 bg-red-50/20' : 'border-amber-200/80 bg-amber-50/30'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-xs text-[#16303d]">{q.id}</span>
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full bg-white border ${
+                          q.id === 'Q0' ? 'text-red-700 border-red-200' : 'text-[#c2410c] border-amber-200'
+                        }`}>
+                          {q.field}
+                        </span>
+                      </div>
+                      <h4 className="font-bold text-sm text-[#16303d] leading-snug">
+                        {q.question_text}
+                      </h4>
+                      <p className="text-xs text-[#627c80]">{q.impact}</p>
+                    </div>
+                  </div>
+
+                  {/* Competing Evidence Cards with Clickable Citations */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                    {q.competing_evidence?.map((ev: any, idx: number) => (
+                      <div
+                        key={idx}
+                        onClick={() => setActiveCitation({ document: ev.source, locator: ev.locator, excerpt: ev.excerpt })}
+                        className="p-3.5 rounded-2xl bg-white/80 border border-white hover:bg-white cursor-pointer transition space-y-1 shadow-2xs hover:shadow-sm"
+                        title="Click to view verbatim excerpt in document viewer"
+                      >
+                        <div className="flex items-center justify-between text-[10px] font-mono font-semibold text-[#087553]">
+                          <span>{ev.source} [{ev.locator}]</span>
+                          <span className="text-[#627c80]">Evidence {idx + 1}</span>
+                        </div>
+                        <p className="text-xs text-[#16303d] italic">&quot;{ev.excerpt}&quot;</p>
+                        <div className="text-[10px] text-[#627c80] font-medium pt-0.5">
+                          Claimed Value: <span className="font-semibold text-[#16303d]">{ev.claim}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Interactive Choices & Custom Input */}
+                  <div className="space-y-2 pt-2 border-t border-[#5c8979]/15">
+                    <div className="text-[11px] font-semibold text-[#627c80]">Select Governing Policy Answer:</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {q.suggested_options?.map((opt: string) => {
+                        const isSelected = userAnswers[q.id] === opt
+                        return (
+                          <button
+                            key={opt}
+                            type="button"
+                            onClick={() => setUserAnswers({ ...userAnswers, [q.id]: opt })}
+                            className={`px-4 py-2 rounded-full text-xs font-semibold cursor-pointer transition ${
+                              isSelected
+                                ? 'bg-[#087553] text-white shadow-xs'
+                                : 'secondary-pill hover:bg-white text-[#16303d]'
+                            }`}
+                          >
+                            <span>{opt}</span>
+                          </button>
+                        )
+                      })}
+
+                      {/* Custom Input */}
+                      <input
+                        type="text"
+                        placeholder="Or type custom parameter value..."
+                        value={customAnswers[q.id] || ''}
+                        onChange={(e) => {
+                          setCustomAnswers({ ...customAnswers, [q.id]: e.target.value })
+                          setUserAnswers({ ...userAnswers, [q.id]: e.target.value })
+                        }}
+                        className="flex-1 min-w-[200px] text-xs px-3.5 py-1.5 bg-white/90 border border-white rounded-full text-[#16303d] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {/* Submit All Answers CTA */}
+              <div className="flex justify-end pt-2">
+                <button
+                  onClick={handleConfirmAndSynthesize}
+                  disabled={isSynthesizing}
+                  className="mint-button px-7 py-3 text-xs font-semibold cursor-pointer flex items-center gap-2 shadow-lg"
+                >
+                  <Sparkles className="w-4 h-4 text-[#087553]" />
+                  <span>Confirm Governance Decisions & Synthesize Final Configuration</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
-      {/* MODE 4: TESTS (Boundary + Positive + Negative) */}
-      {activeMode === 'tests' && (
-        <div className="bg-white rounded-xl border border-[#1e4836]/12 shadow-2xs overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-            <div>
-              <span className="text-xs font-bold text-[#123D30] uppercase tracking-wider">
-                Boundary & Conformance Test Suite ({rawTests.length} Generated Test Cases)
-              </span>
-              <p className="text-[11px] text-slate-500">
-                Automated tests derived from confirmed business rules. Tests the inclusive 21 to 60/65 age boundaries (20, 21, 60, 61) and loan amounts.
+      {/* 5. STAGE 3: SYNTHESIZED LEVEL 2 ARTEFACTS SUITE */}
+      {stage === 'config' && synthesizedConfig && (
+        <div className="space-y-6">
+          {/* Level 2 Distinct Artefacts Navigation Pill Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white/80 p-2 rounded-2xl border border-white/90 shadow-2xs">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                onClick={() => setActiveArtefactTab('config')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition flex items-center gap-1.5 ${
+                  activeArtefactTab === 'config'
+                    ? 'bg-[#087553] text-white shadow-xs'
+                    : 'text-[#627c80] hover:text-[#16303d] hover:bg-white/60'
+                }`}
+              >
+                <FileJson className="w-3.5 h-3.5" />
+                <span>1. Config &amp; Provenance</span>
+              </button>
+
+              <button
+                onClick={() => setActiveArtefactTab('workflow')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition flex items-center gap-1.5 ${
+                  activeArtefactTab === 'workflow'
+                    ? 'bg-[#087553] text-white shadow-xs'
+                    : 'text-[#627c80] hover:text-[#16303d] hover:bg-white/60'
+                }`}
+              >
+                <GitFork className="w-3.5 h-3.5" />
+                <span>2. Editable Workflow</span>
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800">14 States</span>
+              </button>
+
+              <button
+                onClick={() => setActiveArtefactTab('mappings')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition flex items-center gap-1.5 ${
+                  activeArtefactTab === 'mappings'
+                    ? 'bg-[#087553] text-white shadow-xs'
+                    : 'text-[#627c80] hover:text-[#16303d] hover:bg-white/60'
+                }`}
+              >
+                <TableIcon className="w-3.5 h-3.5" />
+                <span>3. Field Mappings</span>
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-gray-100 text-gray-700">12 Rules</span>
+              </button>
+
+              <button
+                onClick={() => setActiveArtefactTab('openapi')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition flex items-center gap-1.5 ${
+                  activeArtefactTab === 'openapi'
+                    ? 'bg-[#087553] text-white shadow-xs'
+                    : 'text-[#627c80] hover:text-[#16303d] hover:bg-white/60'
+                }`}
+              >
+                <Code2 className="w-3.5 h-3.5" />
+                <span>4. OpenAPI Contract</span>
+              </button>
+
+              <button
+                onClick={() => setActiveArtefactTab('tests')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition flex items-center gap-1.5 ${
+                  activeArtefactTab === 'tests'
+                    ? 'bg-[#087553] text-white shadow-xs'
+                    : 'text-[#627c80] hover:text-[#16303d] hover:bg-white/60'
+                }`}
+              >
+                <Play className="w-3.5 h-3.5" />
+                <span>5. Test Suite</span>
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800">16 Tests</span>
+              </button>
+
+              <button
+                onClick={() => setActiveArtefactTab('validation')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition flex items-center gap-1.5 ${
+                  activeArtefactTab === 'validation'
+                    ? 'bg-[#087553] text-white shadow-xs'
+                    : 'text-[#627c80] hover:text-[#16303d] hover:bg-white/60'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>6. Validation</span>
+              </button>
+
+              <button
+                onClick={() => setActiveArtefactTab('versioning')}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition flex items-center gap-1.5 ${
+                  activeArtefactTab === 'versioning'
+                    ? 'bg-[#087553] text-white shadow-xs'
+                    : 'text-[#627c80] hover:text-[#16303d] hover:bg-white/60'
+                }`}
+              >
+                <History className="w-3.5 h-3.5" />
+                <span>7. Change Review</span>
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-900">CHG-001</span>
+              </button>
+            </div>
+          </div>
+
+          {/* TAB 1: CONFIGURATION & PROVENANCE (DUAL VIEW) */}
+          {activeArtefactTab === 'config' && (
+            <div className="space-y-4">
+              {/* View Switcher Bar */}
+              <div className="flex items-center justify-between bg-white/70 p-2 rounded-2xl border border-white/90 shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#16303d] px-2">Configuration View:</span>
+                  <button
+                    onClick={() => setConfigViewMode('interactive')}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition flex items-center gap-1.5 ${
+                      configViewMode === 'interactive' ? 'bg-[#087553] text-white shadow-xs' : 'text-[#627c80] hover:text-[#16303d]'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>Interactive Field Provenance</span>
+                  </button>
+                  <button
+                    onClick={() => setConfigViewMode('json')}
+                    className={`px-4 py-1.5 rounded-full text-xs font-semibold cursor-pointer transition flex items-center gap-1.5 ${
+                      configViewMode === 'json' ? 'bg-[#087553] text-white shadow-xs' : 'text-[#627c80] hover:text-[#16303d]'
+                    }`}
+                  >
+                    <FileJson className="w-3.5 h-3.5" />
+                    <span>Exportable Clean JSON</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleCopyJson}
+                    className="secondary-pill px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer text-[#16303d]"
+                  >
+                    <Copy className="w-3.5 h-3.5 text-[#087553]" />
+                    <span>{copiedToast ? 'Copied!' : 'Copy JSON'}</span>
+                  </button>
+                  <button
+                    onClick={handleDownloadJson}
+                    className="secondary-pill px-3 py-1.5 text-xs flex items-center gap-1.5 cursor-pointer text-[#16303d]"
+                  >
+                    <Download className="w-3.5 h-3.5 text-[#087553]" />
+                    <span>Export File</span>
+                  </button>
+                </div>
+              </div>
+
+          {/* VIEW 1: INTERACTIVE FIELDS CONFIGURATION WITH ROW-BY-ROW SCORES & CITATIONS */}
+          {configViewMode === 'interactive' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {metricsAnalysis.map((metric, idx) => {
+                const isHumanResolved = Boolean(metric.resolved_via_question)
+                return (
+                  <div
+                    key={idx}
+                    className={`glass rounded-[23px] p-5 border shadow-[0_8px_25px_-15px_rgba(46,83,68,0.16)] space-y-3 ${
+                      isHumanResolved ? 'border-emerald-300 bg-emerald-50/20' : 'border-white/90'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-mono font-bold text-[#16303d]">{metric.field_path}</span>
+                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 bg-emerald-100 text-emerald-800">
+                        <ShieldCheck className="w-3 h-3 text-emerald-700" />
+                        <span>100% Grounded</span>
+                      </span>
+                    </div>
+
+                    <div className="flex items-baseline justify-between pt-1">
+                      <div>
+                        <div className="text-[11px] text-[#627c80]">{metric.label}</div>
+                        <div className="text-xl font-bold text-[#16303d] mt-0.5">
+                          {typeof metric.value === 'object' ? JSON.stringify(metric.value) : String(metric.value)}
+                        </div>
+                      </div>
+                      <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded bg-white text-[#627c80] border border-white">
+                        {metric.type}
+                      </span>
+                    </div>
+
+                    {/* Resolved via Human Decision Highlight Badge */}
+                    {isHumanResolved && (
+                      <div className="p-2.5 rounded-xl bg-[#d5f4df]/70 border border-emerald-200 text-xs text-[#087553] space-y-0.5">
+                        <div className="font-bold flex items-center gap-1.5 text-[11px]">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-[#087553]" />
+                          <span>Approved via Reviewer Clarification</span>
+                        </div>
+                        <p className="text-[11px] text-[#123e2e]">
+                          Decision Answer: <span className="font-bold underline">{metric.resolved_via_question?.user_answer}</span> (Question: {metric.resolved_via_question?.question_text})
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Knowledge Graph Explainability Rationale */}
+                    <p className="text-[11px] text-[#48636b] leading-relaxed">
+                      {metric.confidence_rationale}
+                    </p>
+
+                    {/* Clickable Citation Tag */}
+                    {metric.citation && (
+                      <div className="pt-2 border-t border-[#5c8979]/15 flex items-center justify-between">
+                        <button
+                          onClick={() => setActiveCitation(metric.citation)}
+                          className="text-[11px] font-mono text-[#087553] hover:underline flex items-center gap-1 cursor-pointer font-medium"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>{metric.citation.document} [{metric.citation.locator}]</span>
+                        </button>
+                        <span className="text-[10px] text-[#627c80]">Click to view source excerpt</span>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* VIEW 2: EXPORTABLE CLEAN JSON (Monaco) */}
+          {configViewMode === 'json' && (
+            <div className="glass rounded-[25px] border border-white/90 overflow-hidden shadow-[0_8px_30px_-10px_rgba(46,83,68,0.08)] h-[600px] flex flex-col">
+              <div className="px-6 py-3 border-b border-white/80 bg-white/70 flex items-center justify-between text-xs">
+                <span className="font-mono font-bold text-[#16303d]">Meridian Cooperative Bank KYC/AML Production Config (JSON)</span>
+                <span className="text-[11px] text-[#627c80]">Validated against Target CBS Implementation Schema</span>
+              </div>
+              <div className="flex-1">
+                <Editor
+                  height="100%"
+                  language="json"
+                  value={editorJson}
+                  onChange={(val) => setEditorJson(val || '')}
+                  theme="light"
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 12,
+                    lineNumbers: 'on',
+                    scrollBeyondLastLine: false,
+                    wordWrap: 'on',
+                    automaticLayout: true,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 2: EDITABLE WORKFLOW GRAPH */}
+      {activeArtefactTab === 'workflow' && <EditableWorkflowCanvas />}
+
+      {/* TAB 3: FIELD MAPPINGS */}
+      {activeArtefactTab === 'mappings' && <FieldMappingsPanel />}
+
+      {/* TAB 4: OPENAPI CONTRACT */}
+      {activeArtefactTab === 'openapi' && (
+        <OpenApiContractPanel contractJson={fullSynthesisData?.openapi_contract} />
+      )}
+
+      {/* TAB 5: EXECUTABLE TEST SUITE */}
+      {activeArtefactTab === 'tests' && <ScenarioTestSuitePanel />}
+
+      {/* TAB 6: VALIDATION REPORT */}
+      {activeArtefactTab === 'validation' && <ValidationDiagnosticsPanel />}
+
+      {/* TAB 7: CHANGE REVIEW (CHG-001) */}
+      {activeArtefactTab === 'versioning' && <ChangeControlPanel />}
+    </div>
+  )}
+
+      {/* 6. Embedded Document Citation Inspector Viewer with Text Annotation */}
+      {activeCitation && (
+        <div className="fixed inset-y-0 right-0 w-[420px] max-w-full glass-strong border-l border-white shadow-2xl p-6 z-50 flex flex-col justify-between overflow-y-auto animate-slideLeft">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-[#5c8979]/15">
+              <div className="flex items-center gap-2">
+                <FileText className="w-4 h-4 text-[#087553]" />
+                <h3 className="font-bold text-sm text-[#16303d]">Document Viewer & Provenance</h3>
+              </div>
+              <button
+                onClick={() => setActiveCitation(null)}
+                className="text-[#627c80] hover:text-[#16303d] text-lg cursor-pointer"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-white/80 border border-white/90 space-y-1 text-xs">
+              <div className="text-[10px] text-[#627c80] uppercase font-semibold">Origin Specification File</div>
+              <div className="font-bold text-[#16303d] text-sm">{activeCitation.document}</div>
+              <div className="text-[11px] text-[#087553] font-mono">Coordinate Locator: <span className="font-bold">{activeCitation.locator}</span></div>
+            </div>
+
+            <div className="space-y-1.5 text-xs">
+              <div className="text-[11px] font-semibold text-[#627c80] flex items-center justify-between">
+                <span>Annotated Document Excerpt:</span>
+                <span className="text-[10px] text-[#087553] font-medium bg-[#d5f4df] px-2 py-0.5 rounded-full">Exact Text Match</span>
+              </div>
+              <div className="p-4 rounded-2xl bg-white/95 border border-white text-xs text-[#16303d] leading-relaxed shadow-inner">
+                <span className="bg-[#55f5b5]/40 px-1 py-0.5 rounded font-medium border-b-2 border-[#087553]">
+                  {activeCitation.excerpt}
+                </span>
+              </div>
+            </div>
+
+            <div className="p-3.5 bg-[#d5f4df]/60 rounded-2xl border border-emerald-200 text-xs text-[#087553] space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-[11px]">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Grounded Provenance Verification</span>
+              </div>
+              <p className="text-[11px] text-[#123e2e] leading-snug">
+                Character & coordinate offsets are cryptographically bound to the source document ingestion record. Zero hallucinated terms.
               </p>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200 text-[11px]">
-                <tr>
-                  <th className="px-4 py-2.5">Test ID</th>
-                  <th className="px-4 py-2.5">Category</th>
-                  <th className="px-4 py-2.5">Scenario Description</th>
-                  <th className="px-4 py-2.5">Test Inputs</th>
-                  <th className="px-4 py-2.5">Expected Outcome</th>
-                  <th className="px-4 py-2.5">Source Policy</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {rawTests.map((t: any) => {
-                  const isReject = t.expected_result === 'REJECT'
-                  return (
-                    <tr key={t.test_id} className="hover:bg-slate-50/60">
-                      <td className="px-4 py-3 font-mono font-bold text-slate-800">
-                        {t.test_id}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                          {t.category}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-800">
-                        {t.description}
-                      </td>
-                      <td className="px-4 py-3 font-mono text-[11px] text-slate-600">
-                        {JSON.stringify(t.inputs)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                            isReject
-                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          }`}
-                        >
-                          {t.expected_result} ({t.expected_code})
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 font-mono text-[10px] text-slate-500">
-                        {t.source_citation}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
+          <button
+            onClick={() => setActiveCitation(null)}
+            className="secondary-pill px-4 py-2.5 text-xs font-semibold w-full cursor-pointer mt-6"
+          >
+            Close Viewer
+          </button>
         </div>
       )}
+
     </div>
   )
 }

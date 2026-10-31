@@ -66,19 +66,19 @@ export const QuestionsPage: React.FC<QuestionsPageProps> = ({ activeProject, set
   const answeredQuestions = questions.filter((q) => q.status === 'answered')
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6 pb-12">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-[#123D30]">Questions, Ambiguities & Human Review Gates</h1>
-          <p className="text-xs text-[#64736D] mt-0.5">
+          <h1 className="text-2xl font-semibold text-[#16303d] tracking-tight">Questions, Ambiguities & Human Review Gates</h1>
+          <p className="text-xs text-[#627c80] mt-0.5">
             Structured clarifications where source documents conflict or omit critical thresholds. Approvals are blocked until resolved.
           </p>
         </div>
 
         <button
           onClick={loadQuestions}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1e4836]/15 hover:bg-white text-xs font-medium text-[#18312B] transition cursor-pointer self-start"
+          className="secondary-pill px-4 py-2 text-xs flex items-center gap-1.5 cursor-pointer self-start"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh</span>
@@ -87,13 +87,13 @@ export const QuestionsPage: React.FC<QuestionsPageProps> = ({ activeProject, set
 
       {/* Summary Alert Banner */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-amber-900 flex items-center justify-between shadow-2xs">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center font-bold text-amber-800">
+        <div className="glass rounded-[20px] p-4.5 border border-amber-200/80 bg-amber-50/50 text-amber-900 flex items-center justify-between shadow-2xs">
+          <div className="flex items-center gap-3.5">
+            <div className="w-9 h-9 rounded-2xl bg-amber-100 flex items-center justify-center font-bold text-amber-800 text-xs">
               {openQuestions.length}
             </div>
             <div>
-              <div className="font-bold text-xs">Unresolved Blocking Questions</div>
+              <div className="font-bold text-xs text-[#16303d]">Unresolved Blocking Questions</div>
               <div className="text-[11px] text-amber-800">
                 Requires human sign-off before production lock
               </div>
@@ -101,14 +101,14 @@ export const QuestionsPage: React.FC<QuestionsPageProps> = ({ activeProject, set
           </div>
         </div>
 
-        <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-200 text-emerald-900 flex items-center justify-between shadow-2xs">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center font-bold text-emerald-800">
+        <div className="glass rounded-[20px] p-4.5 border border-emerald-200/80 bg-emerald-50/50 text-emerald-900 flex items-center justify-between shadow-2xs">
+          <div className="flex items-center gap-3.5">
+            <div className="w-9 h-9 rounded-2xl bg-[#d5f4df] flex items-center justify-center font-bold text-[#087553] text-xs">
               {answeredQuestions.length}
             </div>
             <div>
-              <div className="font-bold text-xs">Resolved Decisions</div>
-              <div className="text-[11px] text-emerald-800">
+              <div className="font-bold text-xs text-[#16303d]">Resolved Decisions</div>
+              <div className="text-[11px] text-[#087553]">
                 Audited and incorporated into artefacts
               </div>
             </div>
@@ -118,14 +118,14 @@ export const QuestionsPage: React.FC<QuestionsPageProps> = ({ activeProject, set
 
       {/* Open Questions List */}
       <div className="space-y-4">
-        <div className="text-xs font-bold text-[#123D30] uppercase tracking-wider">
+        <div className="text-xs font-bold text-[#16303d] uppercase tracking-wider">
           Action Required: Clarification Cards
         </div>
 
         {openQuestions.length === 0 && (
-          <div className="bg-white rounded-xl border border-slate-200 p-8 text-center text-xs text-slate-500 shadow-2xs">
-            <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto mb-2" />
-            <span className="font-semibold text-slate-800">No unresolved questions!</span>
+          <div className="glass rounded-[23px] border border-white/90 p-8 text-center text-xs text-[#627c80] shadow-[0_8px_25px_-15px_rgba(46,83,68,0.16)]">
+            <CheckCircle2 className="w-8 h-8 text-[#087553] mx-auto mb-2" />
+            <span className="font-semibold text-[#16303d]">No unresolved questions!</span>
             <p className="mt-1">All source ambiguities and policy discrepancies have been confirmed and grounded.</p>
           </div>
         )}
@@ -133,7 +133,7 @@ export const QuestionsPage: React.FC<QuestionsPageProps> = ({ activeProject, set
         {openQuestions.map((q) => (
           <div
             key={q.id}
-            className="bg-white rounded-xl border border-amber-200/80 shadow-2xs p-6 space-y-4 relative overflow-hidden"
+            className="glass rounded-[23px] border border-white/90 shadow-[0_8px_25px_-15px_rgba(46,83,68,0.16)] p-6 space-y-4 relative overflow-hidden"
           >
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
@@ -223,7 +223,7 @@ export const QuestionsPage: React.FC<QuestionsPageProps> = ({ activeProject, set
                 type="button"
                 disabled={submittingId === q.id}
                 onClick={() => handleAnswerSubmit(q)}
-                className="px-5 py-2 rounded-lg bg-[#137A56] hover:bg-[#123D30] text-white text-xs font-bold whitespace-nowrap cursor-pointer transition shadow-sm"
+                className="px-6 py-2.5 rounded-full mint-button text-xs font-semibold whitespace-nowrap cursor-pointer transition shadow-sm"
               >
                 {submittingId === q.id ? 'Recording & Regenerating...' : 'Submit Human Decision'}
               </button>

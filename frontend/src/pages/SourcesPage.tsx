@@ -66,18 +66,18 @@ export const SourcesPage: React.FC<SourcesPageProps> = ({ activeProject }) => {
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6 pb-12">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-[#123D30]">Project Sources & Parsing Pipeline</h1>
-          <p className="text-xs text-[#64736D] mt-0.5">
+          <h1 className="text-2xl font-semibold text-[#16303d] tracking-tight">Project Sources & Parsing Pipeline</h1>
+          <p className="text-xs text-[#627c80] mt-0.5">
             Manage input documents across BRDs, parameter spreadsheets, user stories, and target JSON schemas.
           </p>
         </div>
         <button
           onClick={loadSources}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1e4836]/15 hover:bg-white text-xs font-medium text-[#18312B] transition cursor-pointer self-start"
+          className="secondary-pill px-4 py-2 text-xs flex items-center gap-1.5 cursor-pointer self-start"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh</span>
@@ -85,16 +85,16 @@ export const SourcesPage: React.FC<SourcesPageProps> = ({ activeProject }) => {
       </div>
 
       {/* Upload Zone Card */}
-      <div className="bg-white rounded-xl border border-[#1e4836]/10 p-5 shadow-2xs">
+      <div className="glass rounded-[23px] border border-white/90 p-5 shadow-[0_8px_25px_-15px_rgba(46,83,68,0.16)]">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-[#D7F4E4] text-[#137A56] flex items-center justify-center">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-2xl bg-[#d5f4df] text-[#087553] flex items-center justify-center flex-shrink-0">
               <Upload className="w-5 h-5" />
             </div>
             <div>
-              <div className="text-xs font-semibold text-[#18312B]">Upload Project Document</div>
-              <div className="text-[11px] text-[#64736D]">
-                Supported: <code className="font-mono text-[#137A56]">.docx</code>, <code className="font-mono text-[#137A56]">.xlsx</code>, <code className="font-mono text-[#137A56]">.pdf</code>, <code className="font-mono text-[#137A56]">.txt</code>, <code className="font-mono text-[#137A56]">.json</code>
+              <div className="text-xs font-semibold text-[#16303d]">Upload Project Document</div>
+              <div className="text-[11px] text-[#627c80]">
+                Supported: <code className="font-mono text-[#087553]">.docx</code>, <code className="font-mono text-[#087553]">.xlsx</code>, <code className="font-mono text-[#087553]">.pdf</code>, <code className="font-mono text-[#087553]">.txt</code>, <code className="font-mono text-[#087553]">.json</code>
               </div>
             </div>
           </div>
@@ -104,7 +104,7 @@ export const SourcesPage: React.FC<SourcesPageProps> = ({ activeProject }) => {
               <select
                 value={selectedRole}
                 onChange={(e) => setSelectedRole(e.target.value)}
-                className="text-xs bg-[#F0F5F1] border border-[#1e4836]/15 rounded-lg px-3 py-2 text-[#18312B] focus:outline-none focus:ring-1 focus:ring-[#137A56]"
+                className="text-xs bg-white/80 border border-white/90 rounded-full px-3 py-2 text-[#16303d] focus:outline-none"
               >
                 <option value="BRD / Functional Spec">Role: BRD / Functional Spec</option>
                 <option value="Product Rules / Parameter Sheet">Role: Product Rules / Parameter Sheet</option>
@@ -114,7 +114,7 @@ export const SourcesPage: React.FC<SourcesPageProps> = ({ activeProject }) => {
               </select>
             </div>
 
-            <label className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#137A56] hover:bg-[#123D30] text-white text-xs font-medium cursor-pointer shadow-sm transition">
+            <label className="mint-button px-5 py-2 text-xs cursor-pointer flex items-center gap-1.5">
               <span>{uploading ? 'Parsing File...' : 'Choose File'}</span>
               <input
                 type="file"
@@ -129,12 +129,12 @@ export const SourcesPage: React.FC<SourcesPageProps> = ({ activeProject }) => {
       </div>
 
       {/* Sources Table */}
-      <div className="bg-white rounded-xl border border-[#1e4836]/10 shadow-2xs overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-[#1e4836]/10 bg-[#F0F5F1]/40 flex items-center justify-between">
-          <span className="text-xs font-bold text-[#123D30] uppercase tracking-wider">
+      <div className="glass rounded-[23px] border border-white/90 shadow-[0_8px_25px_-15px_rgba(46,83,68,0.16)] overflow-hidden">
+        <div className="px-6 py-4 border-b border-white/80 bg-white/60 flex items-center justify-between">
+          <span className="text-xs font-bold text-[#16303d] uppercase tracking-wider">
             Document Repository ({sources.length})
           </span>
-          <span className="text-[11px] text-[#64736D]">
+          <span className="text-[11px] text-[#627c80]">
             Exact paragraph, sheet/cell, and page-block provenance preserved
           </span>
         </div>

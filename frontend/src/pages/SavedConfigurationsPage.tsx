@@ -119,19 +119,19 @@ export const SavedConfigurationsPage: React.FC<SavedConfigurationsPageProps> = (
   }
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6 pb-12">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-[#123D30]">Saved Configurations & Artefact Library</h1>
-          <p className="text-xs text-[#64736D] mt-0.5">
+          <h1 className="text-2xl font-semibold text-[#16303d] tracking-tight">Saved Configurations & Artefact Library</h1>
+          <p className="text-xs text-[#627c80] mt-0.5">
             Dedicated persistent repository for generated configurations, workflows, and mappings with full revision history.
           </p>
         </div>
 
         <button
           onClick={loadArtifacts}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#1e4836]/15 hover:bg-white text-xs font-medium text-[#18312B] transition cursor-pointer self-start"
+          className="secondary-pill px-4 py-2 text-xs flex items-center gap-1.5 cursor-pointer self-start"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           <span>Refresh</span>
@@ -149,10 +149,10 @@ export const SavedConfigurationsPage: React.FC<SavedConfigurationsPageProps> = (
             <div
               key={art.id}
               onClick={() => handleSelectArtifact(item)}
-              className={`p-4 rounded-xl border cursor-pointer transition shadow-2xs space-y-2 ${
+              className={`p-4.5 rounded-[20px] border cursor-pointer transition shadow-2xs space-y-2 ${
                 isSelected
-                  ? 'bg-white border-[#137A56] ring-1 ring-[#137A56]'
-                  : 'bg-white border-[#1e4836]/12 hover:border-[#137A56]/40'
+                  ? 'glass border-[#087553] shadow-[0_4px_16px_rgba(8,117,83,0.15)] ring-1 ring-[#087553]'
+                  : 'glass border-white/90 hover:bg-white/80'
               }`}
             >
               <div className="flex items-center justify-between text-xs">
@@ -187,7 +187,7 @@ export const SavedConfigurationsPage: React.FC<SavedConfigurationsPageProps> = (
       {selectedArtifactItem && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Main Monaco / Diff Editor (3 cols) */}
-          <div className="lg:col-span-3 bg-white rounded-xl border border-[#1e4836]/12 overflow-hidden shadow-2xs flex flex-col h-[580px]">
+          <div className="lg:col-span-3 glass rounded-[23px] border border-white/90 overflow-hidden shadow-[0_8px_25px_-15px_rgba(46,83,68,0.16)] flex flex-col h-[580px]">
             {/* Top Editor Bar */}
             <div className="px-5 py-3.5 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
@@ -260,7 +260,7 @@ export const SavedConfigurationsPage: React.FC<SavedConfigurationsPageProps> = (
                   <button
                     onClick={handleSaveNewVersion}
                     disabled={isSavingNewVersion}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#137A56] hover:bg-[#123D30] text-white text-xs font-semibold cursor-pointer transition shadow-xs"
+                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full mint-button text-xs font-semibold cursor-pointer transition"
                   >
                     <Save className="w-3.5 h-3.5" />
                     <span>{isSavingNewVersion ? 'Saving...' : 'Save As New Version'}</span>
@@ -303,7 +303,7 @@ export const SavedConfigurationsPage: React.FC<SavedConfigurationsPageProps> = (
           </div>
 
           {/* Version History Drawer (1 col) */}
-          <div className="bg-white rounded-xl border border-[#1e4836]/12 p-4 shadow-2xs flex flex-col h-[580px] overflow-y-auto space-y-3">
+          <div className="glass rounded-[23px] border border-white/90 p-5 shadow-[0_8px_25px_-15px_rgba(46,83,68,0.16)] flex flex-col h-[580px] overflow-y-auto space-y-3">
             <div className="text-xs font-bold text-[#123D30] uppercase tracking-wider flex items-center justify-between">
               <span>Version History ({versions.length})</span>
               <History className="w-3.5 h-3.5 text-slate-400" />

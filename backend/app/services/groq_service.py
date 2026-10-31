@@ -89,7 +89,7 @@ class GroqService:
         response_schema: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         if not self.client or settings.DEMO_MODE:
-            # Deterministic offline response handled by caller
+            # Offline fallback handled by caller
             return {
                 "is_live": False,
                 "text": "",

@@ -1,5 +1,9 @@
 import json
 import uuid
+try:
+    import yaml
+except ImportError:
+    yaml = None
 from backend.app.parsers.base import DocumentParser, ParseResult, ParseReport, SpanItem
 
 class JsonParser(DocumentParser):
@@ -8,9 +12,13 @@ class JsonParser(DocumentParser):
         errors = []
         spans = []
 
+        is_yaml = filename.lower().endswith((".yaml", ".yml"))
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+                if is_yaml and yaml:
+                    data = yaml.safe_load(f)
+                else:
+                    data = json.load(f)
         except Exception as e:
             return ParseResult(
                 success=False,
@@ -18,9 +26,9 @@ class JsonParser(DocumentParser):
                 report=ParseReport(
                     readable_units=0,
                     total_units=1,
-                    unit_label="json_document",
+                    unit_label="yaml_document" if is_yaml else "json_document",
                     unreadable_units=1,
-                    errors=[f"Invalid JSON syntax: {str(e)}"],
+                    errors=[f"Invalid syntax in {filename}: {str(e)}"],
                     is_partial=False
                 )
             )

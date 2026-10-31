@@ -560,7 +560,7 @@ class GenerationService:
                 {"step": "INTAKE", "message": "Parsed natural language prompt & retrieved source scope"},
                 {"step": "RECONCILIATION", "message": "Evaluated confirmed requirements, evidence spans & human decisions"},
                 {"step": "GENERATION", "message": "Generated Configuration JSON, Workflow Graph, Data Mapping & Boundary Tests"},
-                {"step": "VALIDATION", "message": f"Deterministic schema validation outcome: {'PASSED' if val_outcome.is_valid else 'REQUIRES_REVIEW'}"}
+                {"step": "VALIDATION", "message": f"Draft-07 schema validation outcome: {'PASSED' if val_outcome.is_valid else 'REQUIRES_REVIEW'}"}
             ],
             tokens_used=1420
         )
